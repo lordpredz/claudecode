@@ -1,9 +1,9 @@
 # transcript-bot
 
-Bot de WhatsApp que recebe áudios e mensagens encaminhadas no chat
-"Mensagem para você mesmo", transcreve o áudio (whisper.cpp), resume o
-conteúdo (Ollama, rodando localmente) e responde no mesmo chat com a
-transcrição e o resumo.
+Bot de WhatsApp que roda no seu número pessoal e transcreve áudios e resume
+conversas encaminhadas — tanto no seu próprio chat "Mensagem para você
+mesmo" quanto vindo de qualquer outro contato (seus amigos podem usar
+diretamente, sem você precisar encaminhar nada).
 
 100% local: nenhuma API paga é usada. Pensado para rodar numa VPS modesta
 (2 vCPU / 4 GB RAM, sem GPU).
@@ -12,20 +12,30 @@ Usa [Baileys](https://github.com/WhiskeySockets/Baileys), uma biblioteca
 **não-oficial** que fala o protocolo do WhatsApp Web/multi-device — não é a
 API oficial da Meta. Funciona bem para uso pessoal, mas está fora dos termos
 de uso do WhatsApp; use com moderação (não é um bot de disparo em massa).
+Como roda no seu número pessoal, há risco (baixo, mas real) de o WhatsApp
+identificar comportamento automatizado.
 
 ## Como funciona
 
-1. Você abre no seu WhatsApp o chat "Mensagem para você mesmo" e encaminha
-   pra lá um áudio, ou uma ou várias mensagens de uma conversa.
-2. O bot detecta as mensagens novas nesse chat:
-   - Áudio → baixa, converte pra wav e transcreve com `whisper.cpp`.
-   - Texto → usa o texto direto.
+1. Qualquer contato (incluindo você mesmo, no chat "Mensagem para você
+   mesmo") manda um áudio, ou encaminha uma ou várias mensagens de uma
+   conversa, diretamente pro seu número.
+2. O bot decide o que processar:
+   - **Áudio** → sempre transcrito, não importa quem mandou (baixa, converte
+     pra wav, roda `whisper.cpp`).
+   - **Texto** → só é processado se for **encaminhado** (o WhatsApp marca
+     mensagens encaminhadas). Texto digitado normalmente, numa conversa
+     comum, é ignorado — isso evita que o bot tente "resumir" seu papo do
+     dia a dia com os contatos.
+   - Mensagens que **você mesmo** manda para outra pessoa (fora do seu
+     self-chat) também são ignoradas, pelo mesmo motivo.
 3. Como mensagens encaminhadas chegam uma a uma, o bot **agrupa** tudo que
-   chegar dentro de uma janela de inatividade (padrão 8s, configurável) antes
-   de gerar o resumo — assim uma conversa inteira vira um resumo só, não um
-   por mensagem.
+   chegar dentro de uma janela de inatividade (padrão 8s, configurável, por
+   chat) antes de gerar o resumo — assim uma conversa inteira vira um resumo
+   só, não um por mensagem.
 4. Chama o Ollama localmente pra gerar o resumo em português.
-5. Responde no mesmo chat com a transcrição/texto completo + o resumo.
+5. Responde no mesmo chat (visível para quem mandou) com a
+   transcrição/texto completo + o resumo.
 
 ## Deploy na VPS
 
@@ -69,7 +79,6 @@ desconecte a sessão.
 
 | Variável | Padrão | Descrição |
 |---|---|---|
-| `MONITOR_JID` | (vazio = self-chat) | JID do chat a monitorar. Deixe vazio para usar automaticamente "Mensagem para você mesmo". |
 | `WHISPER_BIN` | `./whisper.cpp/build/bin/whisper-cli` | Binário compilado do whisper.cpp |
 | `WHISPER_MODEL` | `./whisper.cpp/models/ggml-base.bin` | Modelo de transcrição |
 | `WHISPER_LANG` | `pt` | Idioma forçado na transcrição (`auto` para detectar) |
@@ -107,7 +116,12 @@ desconecte a sessão.
 2. Encaminhe várias mensagens de uma conversa de uma vez — confirme que
    chega **um resumo só**, agrupando tudo (respeitando a janela de
    `DEBOUNCE_MS`).
-3. Acompanhe os logs em tempo real com `journalctl -u transcript-bot -f`
+3. Peça pra um amigo mandar um áudio direto pro seu número — deve funcionar
+   igual ao self-chat, respondendo na conversa com ele.
+4. Manda uma mensagem de texto normal (não encaminhada) pra alguém, ou peça
+   pra um amigo te mandar um "oi" comum — confirme que o bot **não**
+   responde nesse caso (só áudio e texto encaminhado geram resposta).
+5. Acompanhe os logs em tempo real com `journalctl -u transcript-bot -f`
    caso algo não volte.
 
 ## Rodando localmente (sem VPS) para desenvolvimento

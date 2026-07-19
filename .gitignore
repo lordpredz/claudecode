@@ -3,3 +3,4 @@ auth/
 .env
 whisper.cpp/
 *.log
+.claude/

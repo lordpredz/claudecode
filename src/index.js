@@ -14,7 +14,6 @@ import { transcribeAudioMessage } from "./transcribe.js";
 import { summarize } from "./summarize.js";
 
 const config = {
-  monitorJid: process.env.MONITOR_JID || null,
   whisperBin: process.env.WHISPER_BIN || "./whisper.cpp/build/bin/whisper-cli",
   whisperModel: process.env.WHISPER_MODEL || "./whisper.cpp/models/ggml-base.bin",
   whisperLang: process.env.WHISPER_LANG || "pt",
@@ -29,14 +28,20 @@ const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 // respostas dele mesmo quando elas aparecem em messages.upsert.
 const sentIds = new Set();
 
-function extractText(msg) {
-  const m = msg.message;
-  if (!m) return null;
-  return m.conversation || m.extendedTextMessage?.text || null;
-}
-
 function hasAudio(msg) {
   return Boolean(msg.message?.audioMessage);
+}
+
+// Só tratamos texto como "conteúdo pra resumir" quando é encaminhado — texto
+// digitado na hora, numa conversa normal, é ignorado. Isso é o que permite o
+// bot rodar no número pessoal sem responder a toda mensagem trocada com
+// qualquer contato. Mensagens encaminhadas chegam como extendedTextMessage
+// com contextInfo.isForwarded; texto digitado normalmente chega como
+// `conversation` (string simples), sem essa marcação.
+function extractForwardedText(msg) {
+  const ext = msg.message?.extendedTextMessage;
+  if (ext?.contextInfo?.isForwarded && ext.text) return ext.text;
+  return null;
 }
 
 async function start() {
@@ -50,10 +55,10 @@ async function start() {
     syncFullHistory: false,
   });
 
-  // WhatsApp pode endereçar o mesmo chat "Mensagem para você mesmo" tanto
-  // pelo JID clássico (numero@s.whatsapp.net) quanto pelo novo @lid (parte da
-  // migração de privacidade do WhatsApp) — por isso aceitamos os dois.
-  let monitorJids = config.monitorJid ? new Set([jidNormalizedUser(config.monitorJid)]) : null;
+  // WhatsApp pode endereçar o chat "Mensagem para você mesmo" tanto pelo JID
+  // clássico (numero@s.whatsapp.net) quanto pelo novo @lid (migração de
+  // privacidade do WhatsApp) — guardamos os dois para reconhecer o self-chat.
+  let selfJids = new Set();
 
   const batcher = createBatcher({
     debounceMs: config.debounceMs,
@@ -89,19 +94,10 @@ async function start() {
     }
 
     if (connection === "open") {
-      logger.info({ user: sock.user }, "Dados da conta conectada (debug)");
-      if (!monitorJids) {
-        const jids = [jidNormalizedUser(sock.user.id)];
-        if (sock.user.lid) jids.push(jidNormalizedUser(sock.user.lid));
-        monitorJids = new Set(jids);
-        logger.info(
-          { monitorJids: [...monitorJids] },
-          "Monitorando o chat 'Mensagem para você mesmo' (nenhum MONITOR_JID definido)"
-        );
-      } else {
-        logger.info({ monitorJids: [...monitorJids] }, "Monitorando chat configurado via MONITOR_JID");
-      }
-      logger.info("Conectado ao WhatsApp");
+      const jids = [jidNormalizedUser(sock.user.id)];
+      if (sock.user.lid) jids.push(jidNormalizedUser(sock.user.lid));
+      selfJids = new Set(jids);
+      logger.info({ selfJids: [...selfJids] }, "Conectado ao WhatsApp — aceitando mensagens de qualquer contato");
     }
 
     if (connection === "close") {
@@ -128,13 +124,12 @@ async function start() {
           sentIds.delete(msg.key.id);
           continue;
         }
-        if (!monitorJids || !monitorJids.has(msg.key.remoteJid)) {
-          logger.info(
-            { incomingJid: msg.key.remoteJid, monitorJids: monitorJids ? [...monitorJids] : null },
-            "Mensagem recebida fora do chat monitorado, ignorando"
-          );
-          continue;
-        }
+
+        // Fora do self-chat, só processamos o que os OUTROS mandam pra você —
+        // uma mensagem que você mesmo manda pra um amigo não deve gerar uma
+        // resposta do bot dentro dessa conversa.
+        const isSelfChat = selfJids.has(msg.key.remoteJid);
+        if (!isSelfChat && msg.key.fromMe) continue;
 
         if (hasAudio(msg)) {
           logger.info({ jid: msg.key.remoteJid }, "Transcrevendo áudio recebido");
@@ -143,7 +138,7 @@ async function start() {
           continue;
         }
 
-        const text = extractText(msg);
+        const text = extractForwardedText(msg);
         if (text) {
           batcher.add(msg.key.remoteJid, { text });
         }
