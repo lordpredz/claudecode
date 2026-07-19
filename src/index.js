@@ -50,7 +50,10 @@ async function start() {
     syncFullHistory: false,
   });
 
-  let monitorJid = config.monitorJid ? jidNormalizedUser(config.monitorJid) : null;
+  // WhatsApp pode endereçar o mesmo chat "Mensagem para você mesmo" tanto
+  // pelo JID clássico (numero@s.whatsapp.net) quanto pelo novo @lid (parte da
+  // migração de privacidade do WhatsApp) — por isso aceitamos os dois.
+  let monitorJids = config.monitorJid ? new Set([jidNormalizedUser(config.monitorJid)]) : null;
 
   const batcher = createBatcher({
     debounceMs: config.debounceMs,
@@ -87,11 +90,16 @@ async function start() {
 
     if (connection === "open") {
       logger.info({ user: sock.user }, "Dados da conta conectada (debug)");
-      if (!monitorJid) {
-        monitorJid = jidNormalizedUser(sock.user.id);
-        logger.info({ monitorJid }, "Monitorando o chat 'Mensagem para você mesmo' (nenhum MONITOR_JID definido)");
+      if (!monitorJids) {
+        const jids = [jidNormalizedUser(sock.user.id)];
+        if (sock.user.lid) jids.push(jidNormalizedUser(sock.user.lid));
+        monitorJids = new Set(jids);
+        logger.info(
+          { monitorJids: [...monitorJids] },
+          "Monitorando o chat 'Mensagem para você mesmo' (nenhum MONITOR_JID definido)"
+        );
       } else {
-        logger.info({ monitorJid }, "Monitorando chat configurado via MONITOR_JID");
+        logger.info({ monitorJids: [...monitorJids] }, "Monitorando chat configurado via MONITOR_JID");
       }
       logger.info("Conectado ao WhatsApp");
     }
@@ -120,9 +128,9 @@ async function start() {
           sentIds.delete(msg.key.id);
           continue;
         }
-        if (!monitorJid || msg.key.remoteJid !== monitorJid) {
+        if (!monitorJids || !monitorJids.has(msg.key.remoteJid)) {
           logger.info(
-            { incomingJid: msg.key.remoteJid, monitorJid },
+            { incomingJid: msg.key.remoteJid, monitorJids: monitorJids ? [...monitorJids] : null },
             "Mensagem recebida fora do chat monitorado, ignorando"
           );
           continue;
