@@ -5,8 +5,11 @@ conversas encaminhadas — tanto no seu próprio chat "Mensagem para você
 mesmo" quanto vindo de qualquer outro contato (seus amigos podem usar
 diretamente, sem você precisar encaminhar nada).
 
-100% local: nenhuma API paga é usada. Pensado para rodar numa VPS modesta
-(2 vCPU / 4 GB RAM, sem GPU).
+A transcrição de áudio (`whisper.cpp`) roda 100% local e grátis. O resumo
+pode ser gerado por um LLM local (Ollama, grátis, qualidade mais limitada) ou
+pela API da Anthropic (Claude, paga por uso, resumo bem melhor — custo tipico
+de frações de centavo por resumo, já que é um texto curto). Pensado para
+rodar numa VPS modesta (2 vCPU / 4 GB RAM, sem GPU).
 
 Usa [Baileys](https://github.com/WhiskeySockets/Baileys), uma biblioteca
 **não-oficial** que fala o protocolo do WhatsApp Web/multi-device — não é a
@@ -33,7 +36,8 @@ identificar comportamento automatizado.
    chegar dentro de uma janela de inatividade (padrão 8s, configurável, por
    chat) antes de gerar o resumo — assim uma conversa inteira vira um resumo
    só, não um por mensagem.
-4. Chama o Ollama localmente pra gerar o resumo em português.
+4. Gera o resumo em português — via Claude (nuvem) ou Ollama (local),
+   conforme `SUMMARY_PROVIDER` no `.env`.
 5. Responde no mesmo chat (visível para quem mandou) com a
    transcrição/texto completo + o resumo.
 
@@ -50,10 +54,16 @@ bash scripts/setup-vps.sh
 
 O script instala ffmpeg, Node.js 20, compila o `whisper.cpp`, baixa o modelo
 `ggml-base` (transcrição) e instala o Ollama + baixa o modelo
-`llama3.2:3b-instruct-q4_K_M` (resumo). Ao final ele cria o `.env` a partir
-do `.env.example` — os caminhos padrão já batem com o que o script gera.
+`llama3.2:3b-instruct-q4_K_M` (resumo local, caso você opte por ele). Ao
+final ele cria o `.env` a partir do `.env.example` — os caminhos padrão já
+batem com o que o script gera.
 
-Revise o `.env` se quiser mudar algo (ver seção [Configuração](#configuração)).
+Por padrão o `.env` vem configurado com `SUMMARY_PROVIDER=claude`. Pra isso
+funcionar, edite o `.env` na VPS e preencha `ANTHROPIC_API_KEY` com uma chave
+gerada em [console.anthropic.com](https://console.anthropic.com) (crie a
+chave direto lá — não cole a chave numa conversa de chat). Se preferir não
+gastar nada, mude para `SUMMARY_PROVIDER=ollama` (ver seção
+[Configuração](#configuração)).
 
 ### Subir como serviço (systemd)
 
@@ -82,15 +92,29 @@ desconecte a sessão.
 | `WHISPER_BIN` | `./whisper.cpp/build/bin/whisper-cli` | Binário compilado do whisper.cpp |
 | `WHISPER_MODEL` | `./whisper.cpp/models/ggml-base.bin` | Modelo de transcrição |
 | `WHISPER_LANG` | `pt` | Idioma forçado na transcrição (`auto` para detectar) |
-| `OLLAMA_URL` | `http://127.0.0.1:11434` | Endpoint do Ollama |
-| `OLLAMA_MODEL` | `llama3.2:3b-instruct-q4_K_M` | Modelo usado no resumo |
+| `SUMMARY_PROVIDER` | `claude` | `claude` (nuvem, paga) ou `ollama` (local, grátis) |
+| `ANTHROPIC_API_KEY` | (vazio) | Chave da API da Anthropic — só necessária se `SUMMARY_PROVIDER=claude` |
+| `CLAUDE_MODEL` | `claude-opus-4-8` | Modelo Claude usado no resumo |
+| `OLLAMA_URL` | `http://127.0.0.1:11434` | Endpoint do Ollama — só usado se `SUMMARY_PROVIDER=ollama` |
+| `OLLAMA_MODEL` | `llama3.2:3b-instruct-q4_K_M` | Modelo local usado no resumo — só usado se `SUMMARY_PROVIDER=ollama` |
 | `DEBOUNCE_MS` | `8000` | Janela de agrupamento das mensagens encaminhadas |
+
+**Sobre o custo do Claude**: cada resumo é um texto curto (a transcrição de
+um áudio ou algumas mensagens encaminhadas), então o custo por resumo fica
+na casa de frações de centavo, mesmo usando o modelo mais capaz
+(`claude-opus-4-8`, o padrão). Se quiser cortar custo ainda mais, troque
+`CLAUDE_MODEL` para `claude-haiku-4-5` (mais rápido e mais barato, com
+resumo um pouco mais simples).
 
 ## Ajustando para os recursos da sua VPS (4 GB RAM)
 
+Com `SUMMARY_PROVIDER=claude` (padrão), o resumo roda na nuvem — só o
+`whisper.cpp` consome recursos da VPS, então a pressão de RAM é bem menor.
+As dicas abaixo valem principalmente para quem usa `SUMMARY_PROVIDER=ollama`.
+
 - O modelo `ggml-base` do whisper (~148 MB) e o `llama3.2:3b-instruct-q4_K_M`
   (~2 GB) foram escolhidos para caber com folga em 4 GB de RAM, rodando um de
-  cada vez (nunca transcrição e resumo em paralelo).
+  cada vez (nunca transcrição e resumo local em paralelo).
 - Se a transcrição estiver com qualidade ruim e sobrar RAM/CPU nos testes,
   troque para o modelo `small`:
   ```bash
@@ -141,9 +165,13 @@ npm start
   o serviço para gerar um QR novo.
 - **`ffmpeg: command not found`**: rode `scripts/setup-vps.sh` de novo ou
   instale manualmente com `sudo apt-get install ffmpeg`.
-- **Resumo demora muito**: normal em CPU sem GPU; um resumo curto com o
-  modelo de 3B costuma levar alguns segundos a ~1 minuto num 2 vCPU. Se for
-  inaceitável, troque para um modelo Ollama menor (ver seção acima).
+- **Resumo demora muito**: com `SUMMARY_PROVIDER=ollama`, é normal em CPU
+  sem GPU — um resumo curto com o modelo de 3B costuma levar alguns segundos
+  a ~1 minuto num 2 vCPU. Se for inaceitável, troque para `claude` ou para
+  um modelo Ollama menor (ver seção acima).
+- **Erro de autenticação com o Claude** (`AuthenticationError` /
+  `401` nos logs): confira se `ANTHROPIC_API_KEY` está preenchida
+  corretamente no `.env` da VPS e reinicie o serviço.
 - **Bot responde ao próprio resumo em loop**: não deveria acontecer — o
   código ignora mensagens cujo ID foi gerado pelo próprio bot
   (`src/index.js`, `sentIds`). Se acontecer, abra uma issue com o log.

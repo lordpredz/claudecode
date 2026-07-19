@@ -11,7 +11,8 @@ import pino from "pino";
 import qrcode from "qrcode-terminal";
 import { createBatcher } from "./batcher.js";
 import { transcribeAudioMessage } from "./transcribe.js";
-import { summarize } from "./summarize.js";
+import { summarize as summarizeOllama } from "./summarize.js";
+import { summarizeClaude } from "./summarizeClaude.js";
 import { enqueue } from "./queue.js";
 
 const config = {
@@ -20,8 +21,20 @@ const config = {
   whisperLang: process.env.WHISPER_LANG || "pt",
   ollamaUrl: process.env.OLLAMA_URL || "http://127.0.0.1:11434",
   ollamaModel: process.env.OLLAMA_MODEL || "llama3.2:3b-instruct-q4_K_M",
+  summaryProvider: process.env.SUMMARY_PROVIDER || "claude",
+  claudeModel: process.env.CLAUDE_MODEL || "claude-opus-4-8",
   debounceMs: Number(process.env.DEBOUNCE_MS || 8000),
 };
+
+// O Ollama roda local e disputa CPU/RAM com o whisper.cpp, então continua
+// entrando na fila serializada. O Claude é uma chamada de rede — não compete
+// por recursos da VPS, então roda fora da fila (não trava esperando a vez).
+async function summarizeContent(text) {
+  if (config.summaryProvider === "claude") {
+    return summarizeClaude(text, config);
+  }
+  return enqueue(() => summarizeOllama(text, config));
+}
 
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
@@ -69,9 +82,9 @@ async function start() {
 
       let summary;
       try {
-        summary = await enqueue(() => summarize(joined, config));
+        summary = await summarizeContent(joined);
       } catch (err) {
-        logger.error(err, "Falha ao chamar o Ollama");
+        logger.error(err, "Falha ao gerar o resumo");
         summary = "(não foi possível gerar o resumo — veja os logs do bot)";
       }
 
