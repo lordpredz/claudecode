@@ -6,11 +6,12 @@ mesmo" quanto vindo de qualquer outro contato (seus amigos podem usar
 diretamente, sem você precisar encaminhar nada).
 
 A transcrição de áudio (`whisper.cpp`) roda 100% local e grátis. O resumo é
-gerado por um LLM local via Ollama por padrão (grátis) — com um prompt
-estruturado (formato fixo + exemplo) pra dar mais consistência às respostas
-de um modelo pequeno. Também dá pra trocar pra API da Anthropic (Claude,
-paga por uso, resumo melhor) via `.env`, se preferir. Pensado para rodar numa
-VPS modesta (2 vCPU / 4 GB RAM, sem GPU).
+gerado, por padrão, pela API do **Gemini** (Google) usando a camada grátis —
+sem custo, mas exige internet e uma chave gratuita. Também dá pra trocar pra
+Ollama (100% local, sem depender de API externa) ou pra API da Anthropic
+(Claude, paga por uso, melhor qualidade) via `.env`. Todos usam o mesmo
+prompt estruturado (formato fixo + exemplo) pra dar mais consistência às
+respostas. Pensado para rodar numa VPS modesta (2 vCPU / 4 GB RAM, sem GPU).
 
 Usa [Baileys](https://github.com/WhiskeySockets/Baileys), uma biblioteca
 **não-oficial** que fala o protocolo do WhatsApp Web/multi-device — não é a
@@ -37,8 +38,8 @@ identificar comportamento automatizado.
    chegar dentro de uma janela de inatividade (padrão 8s, configurável, por
    chat) antes de gerar o resumo — assim uma conversa inteira vira um resumo
    só, não um por mensagem.
-4. Gera o resumo em português — via Ollama (local, padrão) ou Claude (nuvem),
-   conforme `SUMMARY_PROVIDER` no `.env`.
+4. Gera o resumo em português — via Gemini (padrão, nuvem grátis), Ollama
+   (local) ou Claude (nuvem, paga), conforme `SUMMARY_PROVIDER` no `.env`.
 5. Responde no mesmo chat (visível para quem mandou) com a
    transcrição/texto completo + o resumo.
 
@@ -59,12 +60,13 @@ O script instala ffmpeg, Node.js 20, compila o `whisper.cpp`, baixa o modelo
 final ele cria o `.env` a partir do `.env.example` — os caminhos padrão já
 batem com o que o script gera.
 
-Por padrão o `.env` vem configurado com `SUMMARY_PROVIDER=ollama` (100%
-grátis). Se quiser trocar pra Claude (melhor qualidade, custo baixo por
-uso), mude `SUMMARY_PROVIDER=claude` no `.env` da VPS e preencha
-`ANTHROPIC_API_KEY` com uma chave gerada em
-[console.anthropic.com](https://console.anthropic.com) — crie a chave direto
-lá, não cole a chave numa conversa de chat (ver seção
+Por padrão o `.env` vem configurado com `SUMMARY_PROVIDER=gemini`. Pra
+funcionar, gere uma chave grátis em
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey) e preencha
+`GEMINI_API_KEY` no `.env` da VPS (crie a chave direto lá, não cole a chave
+numa conversa de chat). Se preferir tudo 100% local (sem depender de
+internet/API externa pro resumo), mude `SUMMARY_PROVIDER=ollama`. Se quiser
+pagar por uma qualidade melhor, `SUMMARY_PROVIDER=claude` (ver seção
 [Configuração](#configuração)).
 
 ### Subir como serviço (systemd)
@@ -94,7 +96,9 @@ desconecte a sessão.
 | `WHISPER_BIN` | `./whisper.cpp/build/bin/whisper-cli` | Binário compilado do whisper.cpp |
 | `WHISPER_MODEL` | `./whisper.cpp/models/ggml-base.bin` | Modelo de transcrição |
 | `WHISPER_LANG` | `pt` | Idioma forçado na transcrição (`auto` para detectar) |
-| `SUMMARY_PROVIDER` | `ollama` | `ollama` (local, grátis) ou `claude` (nuvem, paga) |
+| `SUMMARY_PROVIDER` | `gemini` | `gemini` (nuvem, grátis), `ollama` (local, grátis) ou `claude` (nuvem, paga) |
+| `GEMINI_API_KEY` | (vazio) | Chave grátis (aistudio.google.com/apikey) — só necessária se `SUMMARY_PROVIDER=gemini` |
+| `GEMINI_MODEL` | `gemini-2.0-flash` | Modelo Gemini usado no resumo |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Endpoint do Ollama — só usado se `SUMMARY_PROVIDER=ollama` |
 | `OLLAMA_MODEL` | `llama3.2:3b-instruct-q4_K_M` | Modelo local usado no resumo — só usado se `SUMMARY_PROVIDER=ollama` |
 | `OLLAMA_TEMPERATURE` | `0.3` | Mais baixo = respostas mais consistentes entre chamadas parecidas |
@@ -102,19 +106,26 @@ desconecte a sessão.
 | `CLAUDE_MODEL` | `claude-opus-4-8` | Modelo Claude usado no resumo |
 | `DEBOUNCE_MS` | `8000` | Janela de agrupamento das mensagens encaminhadas |
 
-**Sobre a consistência do resumo local (Ollama)**: modelos pequenos (3B)
-seguem instruções soltas de forma inconsistente. O prompt em
-[src/summarize.js](src/summarize.js) usa um **formato de saída fixo**
-(`RESUMO` / `PONTOS-CHAVE` / `TOM`) mais um **exemplo completo** (few-shot)
-pra ancorar o estilo, e `OLLAMA_TEMPERATURE` baixo (0.3) pra reduzir
-variação entre respostas parecidas. Se ainda achar genérico demais, o
-próximo passo real de qualidade é trocar pra `SUMMARY_PROVIDER=claude`.
+**Sobre a consistência do resumo**: modelos menores seguem instruções
+soltas de forma inconsistente. O prompt compartilhado em
+[src/prompt.js](src/prompt.js) (usado pelos três provedores) define um
+**formato de saída fixo** (`RESUMO` / `PONTOS-CHAVE` / `TOM`) mais um
+**exemplo completo** (few-shot) pra ancorar o estilo. No Ollama,
+`OLLAMA_TEMPERATURE` baixo (0.3) reduz ainda mais a variação entre respostas
+parecidas. Gemini e Claude tendem a seguir o formato com mais consistência
+que o Ollama (modelo local de 3B) mesmo assim, por serem modelos maiores.
+
+**Limites da camada grátis do Gemini**: a API do Gemini tem limite de
+requisições por minuto/dia na camada grátis. Pro volume de um bot pessoal
+(alguns resumos por vez) isso não costuma ser problema, mas se aparecer erro
+de `429`/rate limit nos logs, ou é hora de esperar um pouco, ou trocar pra
+`ollama`/`claude`.
 
 ## Ajustando para os recursos da sua VPS (4 GB RAM)
 
-Com `SUMMARY_PROVIDER=claude`, o resumo roda na nuvem — só o `whisper.cpp`
-consome recursos da VPS, então a pressão de RAM é bem menor. As dicas
-abaixo valem pra quem usa `SUMMARY_PROVIDER=ollama` (o padrão).
+Com `SUMMARY_PROVIDER=gemini` ou `SUMMARY_PROVIDER=claude`, o resumo roda na
+nuvem — só o `whisper.cpp` consome recursos da VPS, então a pressão de RAM é
+bem menor. As dicas abaixo valem pra quem usa `SUMMARY_PROVIDER=ollama`.
 
 - O modelo `ggml-base` do whisper (~148 MB) e o `llama3.2:3b-instruct-q4_K_M`
   (~2 GB) foram escolhidos para caber com folga em 4 GB de RAM, rodando um de
@@ -171,11 +182,17 @@ npm start
   instale manualmente com `sudo apt-get install ffmpeg`.
 - **Resumo demora muito**: com `SUMMARY_PROVIDER=ollama`, é normal em CPU
   sem GPU — um resumo curto com o modelo de 3B costuma levar alguns segundos
-  a ~1 minuto num 2 vCPU. Se for inaceitável, troque para `claude` ou para
-  um modelo Ollama menor (ver seção acima).
+  a ~1 minuto num 2 vCPU. Se for inaceitável, troque para `gemini`/`claude`
+  ou para um modelo Ollama menor (ver seção acima).
 - **Erro de autenticação com o Claude** (`AuthenticationError` /
   `401` nos logs): confira se `ANTHROPIC_API_KEY` está preenchida
   corretamente no `.env` da VPS e reinicie o serviço.
+- **Erro `400`/chave inválida com o Gemini**: confira se `GEMINI_API_KEY`
+  está preenchida e é uma chave válida gerada em
+  [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+- **Erro `429` com o Gemini**: estourou o limite da camada grátis
+  (requisições por minuto/dia) — espere um pouco ou troque
+  `SUMMARY_PROVIDER` temporariamente.
 - **Bot responde ao próprio resumo em loop**: não deveria acontecer — o
   código ignora mensagens cujo ID foi gerado pelo próprio bot
   (`src/index.js`, `sentIds`). Se acontecer, abra uma issue com o log.
