@@ -1,0 +1,20 @@
+[Unit]
+Description=Transcript bot (WhatsApp -> transcricao + resumo)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Ajuste User e WorkingDirectory para o seu usuario e o caminho onde
+# o repositorio foi clonado na VPS antes de instalar este unit file.
+User=SEU_USUARIO
+WorkingDirectory=/home/SEU_USUARIO/transcript-bot
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
