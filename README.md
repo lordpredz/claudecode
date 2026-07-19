@@ -129,22 +129,30 @@ troque `SUMMARY_PROVIDER` temporariamente.
 
 ## Ajustando para os recursos da sua VPS (4 GB RAM)
 
-Com `SUMMARY_PROVIDER=groq`, `gemini` ou `claude`, o resumo roda na nuvem —
-só o `whisper.cpp` consome recursos da VPS, então a pressão de RAM é bem
-menor. As dicas abaixo valem pra quem usa `SUMMARY_PROVIDER=ollama`.
+Com `SUMMARY_PROVIDER=groq`, `gemini` ou `claude` (padrão), o resumo roda na
+nuvem — só o `whisper.cpp` consome recursos da VPS, o que já deixa margem
+suficiente pra usar o modelo `small` (~488 MB) por padrão, bem mais preciso
+que o `base`. Essa margem é o que resolve transcrições com palavras trocadas
+(ex: "vida" virando "vinda") — modelos menores do whisper erram mais
+justamente nesse tipo de detalhe.
 
-- O modelo `ggml-base` do whisper (~148 MB) e o `llama3.2:3b-instruct-q4_K_M`
-  (~2 GB) foram escolhidos para caber com folga em 4 GB de RAM, rodando um de
-  cada vez (nunca transcrição e resumo local em paralelo).
-- Se a transcrição estiver com qualidade ruim e sobrar RAM/CPU nos testes,
-  troque para o modelo `small`:
+- Se quiser ainda mais precisão e sobrar RAM/CPU nos testes, dá pra tentar o
+  modelo `medium` (~1.5 GB):
   ```bash
-  bash whisper.cpp/models/download-ggml-model.sh small
+  bash whisper.cpp/models/download-ggml-model.sh medium
   # depois, no .env:
-  WHISPER_MODEL=./whisper.cpp/models/ggml-small.bin
+  WHISPER_MODEL=./whisper.cpp/models/ggml-medium.bin
+  ```
+- Se estiver usando `SUMMARY_PROVIDER=ollama` (resumo local, que soma ~2 GB
+  de RAM do `llama3.2:3b-instruct-q4_K_M`), considere voltar pro `base`
+  (~148 MB) pra não apertar a RAM:
+  ```bash
+  # no .env:
+  WHISPER_MODEL=./whisper.cpp/models/ggml-base.bin
   ```
 - Se o processo tomar OOM (ver `dmesg | grep -i oom` ou `journalctl -u transcript-bot`
-  com o processo morrendo sem motivo aparente), troque o LLM por um menor:
+  com o processo morrendo sem motivo aparente) usando Ollama, troque o LLM
+  por um menor:
   ```bash
   ollama pull qwen2.5:1.5b-instruct
   # no .env:

@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-WHISPER_MODEL="${WHISPER_MODEL:-base}"
+WHISPER_MODEL="${WHISPER_MODEL:-small}"
 OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.2:3b-instruct-q4_K_M}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
