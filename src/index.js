@@ -12,6 +12,7 @@ import qrcode from "qrcode-terminal";
 import { createBatcher } from "./batcher.js";
 import { transcribeAudioMessage } from "./transcribe.js";
 import { summarize } from "./summarize.js";
+import { enqueue } from "./queue.js";
 
 const config = {
   whisperBin: process.env.WHISPER_BIN || "./whisper.cpp/build/bin/whisper-cli",
@@ -68,7 +69,7 @@ async function start() {
 
       let summary;
       try {
-        summary = await summarize(joined, config);
+        summary = await enqueue(() => summarize(joined, config));
       } catch (err) {
         logger.error(err, "Falha ao chamar o Ollama");
         summary = "(não foi possível gerar o resumo — veja os logs do bot)";
@@ -133,7 +134,7 @@ async function start() {
 
         if (hasAudio(msg)) {
           logger.info({ jid: msg.key.remoteJid }, "Transcrevendo áudio recebido");
-          const text = await transcribeAudioMessage(msg, { logger, ...config });
+          const text = await enqueue(() => transcribeAudioMessage(msg, { logger, ...config }));
           batcher.add(msg.key.remoteJid, { text: `🎧 ${text}` });
           continue;
         }
