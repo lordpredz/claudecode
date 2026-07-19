@@ -86,6 +86,7 @@ async function start() {
     }
 
     if (connection === "open") {
+      logger.info({ user: sock.user }, "Dados da conta conectada (debug)");
       if (!monitorJid) {
         monitorJid = jidNormalizedUser(sock.user.id);
         logger.info({ monitorJid }, "Monitorando o chat 'Mensagem para você mesmo' (nenhum MONITOR_JID definido)");
@@ -119,7 +120,13 @@ async function start() {
           sentIds.delete(msg.key.id);
           continue;
         }
-        if (!monitorJid || msg.key.remoteJid !== monitorJid) continue;
+        if (!monitorJid || msg.key.remoteJid !== monitorJid) {
+          logger.info(
+            { incomingJid: msg.key.remoteJid, monitorJid },
+            "Mensagem recebida fora do chat monitorado, ignorando"
+          );
+          continue;
+        }
 
         if (hasAudio(msg)) {
           logger.info({ jid: msg.key.remoteJid }, "Transcrevendo áudio recebido");
