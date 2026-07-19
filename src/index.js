@@ -14,6 +14,7 @@ import { transcribeAudioMessage } from "./transcribe.js";
 import { summarize as summarizeOllama } from "./summarize.js";
 import { summarizeClaude } from "./summarizeClaude.js";
 import { summarizeGemini } from "./summarizeGemini.js";
+import { summarizeGroq } from "./summarizeGroq.js";
 import { enqueue } from "./queue.js";
 
 const config = {
@@ -23,22 +24,27 @@ const config = {
   ollamaUrl: process.env.OLLAMA_URL || "http://127.0.0.1:11434",
   ollamaModel: process.env.OLLAMA_MODEL || "llama3.2:3b-instruct-q4_K_M",
   ollamaTemperature: Number(process.env.OLLAMA_TEMPERATURE || 0.3),
-  summaryProvider: process.env.SUMMARY_PROVIDER || "gemini",
+  summaryProvider: process.env.SUMMARY_PROVIDER || "groq",
   claudeModel: process.env.CLAUDE_MODEL || "claude-opus-4-8",
   geminiApiKey: process.env.GEMINI_API_KEY,
   geminiModel: process.env.GEMINI_MODEL || "gemini-2.0-flash",
+  groqApiKey: process.env.GROQ_API_KEY,
+  groqModel: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
   debounceMs: Number(process.env.DEBOUNCE_MS || 8000),
 };
 
 // Ollama roda local e disputa CPU/RAM com o whisper.cpp, então continua
-// entrando na fila serializada. Claude e Gemini são chamadas de rede — não
-// competem por recursos da VPS, então rodam fora da fila.
+// entrando na fila serializada. Claude, Gemini e Groq são chamadas de rede —
+// não competem por recursos da VPS, então rodam fora da fila.
 async function summarizeContent(text) {
   if (config.summaryProvider === "claude") {
     return summarizeClaude(text, config);
   }
   if (config.summaryProvider === "gemini") {
     return summarizeGemini(text, config);
+  }
+  if (config.summaryProvider === "groq") {
+    return summarizeGroq(text, config);
   }
   return enqueue(() => summarizeOllama(text, config));
 }

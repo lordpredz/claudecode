@@ -6,12 +6,13 @@ mesmo" quanto vindo de qualquer outro contato (seus amigos podem usar
 diretamente, sem você precisar encaminhar nada).
 
 A transcrição de áudio (`whisper.cpp`) roda 100% local e grátis. O resumo é
-gerado, por padrão, pela API do **Gemini** (Google) usando a camada grátis —
-sem custo, mas exige internet e uma chave gratuita. Também dá pra trocar pra
-Ollama (100% local, sem depender de API externa) ou pra API da Anthropic
-(Claude, paga por uso, melhor qualidade) via `.env`. Todos usam o mesmo
-prompt estruturado (formato fixo + exemplo) pra dar mais consistência às
-respostas. Pensado para rodar numa VPS modesta (2 vCPU / 4 GB RAM, sem GPU).
+gerado, por padrão, pela API do **Groq** usando a camada grátis (sem
+cartão) — mas isso depende da conta/região não ter restrição de cota
+(Gemini, por exemplo, pode retornar `limit: 0` dependendo da conta). Também
+dá pra trocar pra Gemini, Ollama (100% local) ou Claude (paga, melhor
+qualidade) via `.env`. Todos usam o mesmo prompt estruturado (formato fixo +
+exemplo) pra dar mais consistência às respostas. Pensado para rodar numa VPS
+modesta (2 vCPU / 4 GB RAM, sem GPU).
 
 Usa [Baileys](https://github.com/WhiskeySockets/Baileys), uma biblioteca
 **não-oficial** que fala o protocolo do WhatsApp Web/multi-device — não é a
@@ -38,8 +39,9 @@ identificar comportamento automatizado.
    chegar dentro de uma janela de inatividade (padrão 8s, configurável, por
    chat) antes de gerar o resumo — assim uma conversa inteira vira um resumo
    só, não um por mensagem.
-4. Gera o resumo em português — via Gemini (padrão, nuvem grátis), Ollama
-   (local) ou Claude (nuvem, paga), conforme `SUMMARY_PROVIDER` no `.env`.
+4. Gera o resumo em português — via Groq (padrão, nuvem grátis), Gemini,
+   Ollama (local) ou Claude (nuvem, paga), conforme `SUMMARY_PROVIDER` no
+   `.env`.
 5. Responde no mesmo chat (visível para quem mandou) com a
    transcrição/texto completo + o resumo.
 
@@ -60,10 +62,10 @@ O script instala ffmpeg, Node.js 20, compila o `whisper.cpp`, baixa o modelo
 final ele cria o `.env` a partir do `.env.example` — os caminhos padrão já
 batem com o que o script gera.
 
-Por padrão o `.env` vem configurado com `SUMMARY_PROVIDER=gemini`. Pra
+Por padrão o `.env` vem configurado com `SUMMARY_PROVIDER=groq`. Pra
 funcionar, gere uma chave grátis em
-[aistudio.google.com/apikey](https://aistudio.google.com/apikey) e preencha
-`GEMINI_API_KEY` no `.env` da VPS (crie a chave direto lá, não cole a chave
+[console.groq.com/keys](https://console.groq.com/keys) e preencha
+`GROQ_API_KEY` no `.env` da VPS (crie a chave direto lá, não cole a chave
 numa conversa de chat). Se preferir tudo 100% local (sem depender de
 internet/API externa pro resumo), mude `SUMMARY_PROVIDER=ollama`. Se quiser
 pagar por uma qualidade melhor, `SUMMARY_PROVIDER=claude` (ver seção
@@ -96,7 +98,9 @@ desconecte a sessão.
 | `WHISPER_BIN` | `./whisper.cpp/build/bin/whisper-cli` | Binário compilado do whisper.cpp |
 | `WHISPER_MODEL` | `./whisper.cpp/models/ggml-base.bin` | Modelo de transcrição |
 | `WHISPER_LANG` | `pt` | Idioma forçado na transcrição (`auto` para detectar) |
-| `SUMMARY_PROVIDER` | `gemini` | `gemini` (nuvem, grátis), `ollama` (local, grátis) ou `claude` (nuvem, paga) |
+| `SUMMARY_PROVIDER` | `groq` | `groq`, `gemini` (nuvem, grátis), `ollama` (local, grátis) ou `claude` (nuvem, paga) |
+| `GROQ_API_KEY` | (vazio) | Chave grátis (console.groq.com/keys) — só necessária se `SUMMARY_PROVIDER=groq` |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Modelo Groq usado no resumo |
 | `GEMINI_API_KEY` | (vazio) | Chave grátis (aistudio.google.com/apikey) — só necessária se `SUMMARY_PROVIDER=gemini` |
 | `GEMINI_MODEL` | `gemini-2.0-flash` | Modelo Gemini usado no resumo |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Endpoint do Ollama — só usado se `SUMMARY_PROVIDER=ollama` |
@@ -108,24 +112,26 @@ desconecte a sessão.
 
 **Sobre a consistência do resumo**: modelos menores seguem instruções
 soltas de forma inconsistente. O prompt compartilhado em
-[src/prompt.js](src/prompt.js) (usado pelos três provedores) define um
+[src/prompt.js](src/prompt.js) (usado por todos os provedores) define um
 **formato de saída fixo** (`RESUMO` / `PONTOS-CHAVE` / `TOM`) mais um
 **exemplo completo** (few-shot) pra ancorar o estilo. No Ollama,
 `OLLAMA_TEMPERATURE` baixo (0.3) reduz ainda mais a variação entre respostas
-parecidas. Gemini e Claude tendem a seguir o formato com mais consistência
-que o Ollama (modelo local de 3B) mesmo assim, por serem modelos maiores.
+parecidas. Groq, Gemini e Claude tendem a seguir o formato com mais
+consistência que o Ollama (modelo local de 3B), por serem modelos maiores.
 
-**Limites da camada grátis do Gemini**: a API do Gemini tem limite de
-requisições por minuto/dia na camada grátis. Pro volume de um bot pessoal
-(alguns resumos por vez) isso não costuma ser problema, mas se aparecer erro
-de `429`/rate limit nos logs, ou é hora de esperar um pouco, ou trocar pra
-`ollama`/`claude`.
+**Limites da camada grátis**: tanto Groq quanto Gemini têm limite de
+requisições por minuto/dia na camada grátis, e o Gemini também pode negar a
+cota grátis inteira dependendo da conta/região (retorna `limit: 0` em vez de
+"cota esgotada" — nesse caso não adianta esperar, é preciso trocar de
+provedor ou ativar faturamento). Pro volume de um bot pessoal isso costuma
+bastar no Groq, mas se aparecer erro de `429` nos logs, espere um pouco ou
+troque `SUMMARY_PROVIDER` temporariamente.
 
 ## Ajustando para os recursos da sua VPS (4 GB RAM)
 
-Com `SUMMARY_PROVIDER=gemini` ou `SUMMARY_PROVIDER=claude`, o resumo roda na
-nuvem — só o `whisper.cpp` consome recursos da VPS, então a pressão de RAM é
-bem menor. As dicas abaixo valem pra quem usa `SUMMARY_PROVIDER=ollama`.
+Com `SUMMARY_PROVIDER=groq`, `gemini` ou `claude`, o resumo roda na nuvem —
+só o `whisper.cpp` consome recursos da VPS, então a pressão de RAM é bem
+menor. As dicas abaixo valem pra quem usa `SUMMARY_PROVIDER=ollama`.
 
 - O modelo `ggml-base` do whisper (~148 MB) e o `llama3.2:3b-instruct-q4_K_M`
   (~2 GB) foram escolhidos para caber com folga em 4 GB de RAM, rodando um de
@@ -182,17 +188,23 @@ npm start
   instale manualmente com `sudo apt-get install ffmpeg`.
 - **Resumo demora muito**: com `SUMMARY_PROVIDER=ollama`, é normal em CPU
   sem GPU — um resumo curto com o modelo de 3B costuma levar alguns segundos
-  a ~1 minuto num 2 vCPU. Se for inaceitável, troque para `gemini`/`claude`
-  ou para um modelo Ollama menor (ver seção acima).
+  a ~1 minuto num 2 vCPU. Se for inaceitável, troque para `groq`/`gemini`/
+  `claude` ou para um modelo Ollama menor (ver seção acima).
 - **Erro de autenticação com o Claude** (`AuthenticationError` /
   `401` nos logs): confira se `ANTHROPIC_API_KEY` está preenchida
   corretamente no `.env` da VPS e reinicie o serviço.
+- **Erro `401`/chave inválida com o Groq**: confira se `GROQ_API_KEY` está
+  preenchida e é uma chave válida gerada em
+  [console.groq.com/keys](https://console.groq.com/keys).
 - **Erro `400`/chave inválida com o Gemini**: confira se `GEMINI_API_KEY`
   está preenchida e é uma chave válida gerada em
   [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
-- **Erro `429` com o Gemini**: estourou o limite da camada grátis
+- **Erro `429`** (Groq ou Gemini): estourou o limite da camada grátis
   (requisições por minuto/dia) — espere um pouco ou troque
-  `SUMMARY_PROVIDER` temporariamente.
+  `SUMMARY_PROVIDER` temporariamente. No Gemini, se o erro mostrar
+  `limit: 0` em vez de um número de cota consumida, é restrição de
+  conta/região, não uso — esperar não resolve, só trocar de provedor ou
+  ativar faturamento.
 - **Bot responde ao próprio resumo em loop**: não deveria acontecer — o
   código ignora mensagens cujo ID foi gerado pelo próprio bot
   (`src/index.js`, `sentIds`). Se acontecer, abra uma issue com o log.
