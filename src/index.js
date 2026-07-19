@@ -21,7 +21,8 @@ const config = {
   whisperLang: process.env.WHISPER_LANG || "pt",
   ollamaUrl: process.env.OLLAMA_URL || "http://127.0.0.1:11434",
   ollamaModel: process.env.OLLAMA_MODEL || "llama3.2:3b-instruct-q4_K_M",
-  summaryProvider: process.env.SUMMARY_PROVIDER || "claude",
+  ollamaTemperature: Number(process.env.OLLAMA_TEMPERATURE || 0.3),
+  summaryProvider: process.env.SUMMARY_PROVIDER || "ollama",
   claudeModel: process.env.CLAUDE_MODEL || "claude-opus-4-8",
   debounceMs: Number(process.env.DEBOUNCE_MS || 8000),
 };
