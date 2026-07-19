@@ -76,8 +76,8 @@ async function start() {
       }
 
       const reply =
-        `📝 *Transcrição/Conteúdo:*\n${joined}\n\n` +
-        `📌 *Resumo:*\n${summary}`;
+        `📌 *Resumo:*\n${summary}\n\n` +
+        `📝 *Transcrição/Conteúdo:*\n${joined}`;
 
       const sent = await sock.sendMessage(jid, { text: reply });
       if (sent?.key?.id) sentIds.add(sent.key.id);
